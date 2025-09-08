@@ -119,3 +119,67 @@ Here are links to the data sets that we used in the paper:
 * GSH: http://law.di.unimi.it/webdata/gsh-2015/
 * WDC: http://webdatacommons.org/hyperlinkgraph/2014-04/download.html
 
+
+# AKY Note
+
+``` 
+    DOCKER_BUILDKIT=1 docker build  -t 2ps_base .
+
+    STOREPATH="/data/sda/ahmet/2ps";docker run -it \
+        -v $STOREPATH/graph_output:/mnt/2ps/graph_output \
+        -v $STOREPATH/out:/mnt/2ps/out \
+    	-v $STOREPATH/tmp:/root/.dgl \
+    2ps_base bash
+
+    STOREPATH="/data/sda/ahmet/2ps";DATASET="cora";docker run -it --rm \
+        -v $STOREPATH/graph_output:/mnt/2ps/graph_output \
+        -v $STOREPATH/out:/mnt/2ps/out \
+    	-v $STOREPATH/tmp:/root/.dgl \
+    2ps_base:latest \
+     python3 load_and_prepare_graph-$DATASET.py
+
+    e.g.:
+    DATASET="cora"; python3 /app/load_and_prepare_graph-$DATASET.py
+    
+
+
+    STOREPATH="/data/sda/ahmet/2ps";DATASET="cora"; PARTITION=2;docker run -it --rm \
+        --name 2ps-container \
+        -v $STOREPATH/graph_output:/mnt/2ps/graph_output \
+        -v $STOREPATH/out:/mnt/2ps/out \
+    	-v $STOREPATH/tmp:/root/.dgl \
+        2ps_base:latest \
+    ./twophasepartitioner \
+        -filename /mnt/2ps/graph_output/$DATASET/$DATASET.edgelist \
+        -p $PARTITION \
+        -prepartitioner_type streamcom \
+        -output-path /mnt/2ps/out
+
+
+    STOREPATH="/data/sda/ahmet/2ps";DATASET="cora"; docker run -it --rm \
+        --name 2ps-container \
+        -v $STOREPATH/graph_output:/mnt/2ps/graph_output \
+        -v $STOREPATH/out:/mnt/2ps/out \
+    	-v $STOREPATH/tmp:/root/.dgl \
+        2ps_base:latest \
+        python3 /app/twops_2_dgl.py \
+        --graph_path /mnt/2ps/graph_output/$DATASET/graph.dgl \
+        --partition_dir /mnt/2ps/out \
+        --output_dir /mnt/2ps/out/final_dgl \
+        --json_name $DATASET.json \
+        --graph_name $DATASET
+
+    #ALL
+    STOREPATH="/data/sda/ahmet/2ps"; DATASET="cora";PARTITION=2; docker run -it --rm \
+        --name 2ps-container \
+        -v $STOREPATH/graph_output:/mnt/2ps/graph_output \
+        -v $STOREPATH/out:/mnt/2ps/out \
+    	-v $STOREPATH/tmp:/root/.dgl \
+        2ps_base:latest \
+        /bin/bash -c "python3 /app/load_and_prepare_graph-$DATASET.py; \
+        /app/twophasepartitioner -filename /mnt/2ps/graph_output/$DATASET/$DATASET.edgelist -p $PARTITION -prepartitioner_type streamcom -output-path /mnt/2ps/out; \
+        python3 /app/twops_2_dgl.py --graph_path /mnt/2ps/graph_output/$DATASET/graph.dgl --partition_dir /mnt/2ps/out --output_dir /mnt/2ps/out/final_dgl --json_name $DATASET.json --graph_name $DATASET"
+
+```
+
+`

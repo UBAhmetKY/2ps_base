@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.7)
 project(twophasepartitioner)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 20)
 
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "Setting build type to 'Release'")
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
-set(CMAKE_CXX_FLAGS "-Wall -std=c++14 -fopenmp -mcx16 -DSTATS")
+set(CMAKE_CXX_FLAGS "-Wall -std=c++20 -fopenmp -mcx16 -DSTATS")
 set(CMAKE_CXX_FLAGS_DEBUG "-g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 
