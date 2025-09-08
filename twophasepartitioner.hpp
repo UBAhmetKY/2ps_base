@@ -27,6 +27,8 @@ private:
     std::vector<uint64_t> volumes;
     std::vector<double> quality_scores;
 
+    std::unordered_map<int, std::vector<edge_t>> partitioned_edges;
+
     int find_min_vol_partition();
     int find_max_score_partition(edge_t& e);
     int find_max_score_partition_hdrf(edge_t& e);
@@ -40,9 +42,16 @@ public:
     void do_hdrf(std::vector<edge_t> &edges);
     void do_linear(std::vector<edge_t> &edges);
     void write_edge(edge_t e, int p);
+
+    void write_partitioned_edges_by_pid_binary(const std::string& output_path);
+    void export_node_lists(const std::string& output_path);
+    void export_dgl_partition_metadata(const std::string& output_path, const std::string& graph_name);
+
     std::vector<uint64_t>& get_edge_load();
     void perform_partitioning();
     std::vector<std::bitset<MAX_NUM_PARTITION>> get_vertex_partition_matrix();
+
+    const std::unordered_map<int, std::vector<edge_t>>& get_partitioned_edges() const;
 
 };
 

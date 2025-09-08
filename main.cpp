@@ -26,7 +26,8 @@ DEFINE_bool(use_hdrf, false, "use HDRF instead of linear-time streaming in the s
 DEFINE_string(coms_filename, "", "community filename");
 DEFINE_string(parts_filename, "", "partitions filename");
 DEFINE_int32(str_iters, 1, "the number of iterations of streaming clustering");
-DEFINE_bool(write_parts, false, "write out the partitions to a file");
+DEFINE_bool(write_parts, true, "write out the partitions to a file");
+DEFINE_string(output_path, "", "results output path");
 
 void start_partitioning(Globals &globals, TwoPhasePartitioner &partitioner, std::string &binedgelist);
 
@@ -63,6 +64,16 @@ int main(int argc, char *argv[])
 
     // start partitioner
     start_partitioning(globals, hdrf, binedgelist);
+
+    LOG(INFO) << "Writing partitioned files to: " << FLAGS_output_path;
+    const auto& partitioned_edges_map = hdrf.get_partitioned_edges();
+    DLOG(INFO) << "Number of partitions in memory: " << partitioned_edges_map.size();
+    for (const auto& [pid, edges]: partitioned_edges_map) {
+        DLOG(INFO) << "Partition " << pid << ": " << edges.size() << " edges";
+    }
+    hdrf.write_partitioned_edges_by_pid_binary(FLAGS_output_path);
+    hdrf.export_node_lists(FLAGS_output_path);
+    hdrf.export_dgl_partition_metadata(FLAGS_output_path, "dataset");
 
     // stats
     Stats stats(hdrf, globals);

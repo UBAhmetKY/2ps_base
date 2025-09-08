@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <random>
+#include <filesystem>
 
 #include "twophasepartitioner.hpp"
 
@@ -32,6 +33,7 @@ TwoPhasePartitioner::TwoPhasePartitioner(Globals& GLOBALS) : globals(GLOBALS)
 
 void TwoPhasePartitioner::do_sorted_com_prepartitioning(std::vector<edge_t> edges)
 {
+    DLOG(INFO) << "Processing " << edges.size() << " edges";
     for (auto& e : edges)
     {
         auto& com_u = communities[e.first];
@@ -56,7 +58,118 @@ void TwoPhasePartitioner::do_sorted_com_prepartitioning(std::vector<edge_t> edge
 }
 
 void TwoPhasePartitioner::write_edge(edge_t e, int p){
-    part_file << e.first << " " << e.second << " " << p << std::endl;
+    partitioned_edges[p].emplace_back(e);
+    partitioned_edges[p].emplace_back(e);
+    if (part_file.is_open()) {
+        part_file << e.first << " " << e.second << " " << p << std::endl;
+    }
+}
+
+void TwoPhasePartitioner::write_partitioned_edges_by_pid_binary(const std::string& output_path) {
+    DLOG(INFO) << "Starting to write partitioned edges in binary format...";
+    DLOG(INFO) << "Output path: " << output_path;
+    DLOG(INFO) << "Total partitions in map: " << partitioned_edges.size();
+
+    for (const auto& [pid, edges]: partitioned_edges) {
+        DLOG(INFO) << "Processing partition " << pid << " with " << edges.size() << " edges";
+
+        std::ostringstream oss;
+        oss << output_path << "/part" << pid << "/partition_" << pid << ".bin";
+        std::string filename = oss.str();
+
+        std::filesystem::path dir =
+            std::filesystem::path(filename).parent_path();
+        if (!std::filesystem::exists(dir)) {
+            try {
+                std::filesystem::create_directories(dir);
+                DLOG(INFO) << "Created directories: " << dir
+                          << std::endl;
+            } catch (const std::exception &e) {
+                LOG(ERROR) << "Could not create directories: "
+                          << e.what() << std::endl;
+                continue;
+            }
+        }
+
+        DLOG(INFO) << "Writing to binary file: " << filename;
+
+        std::ofstream out(filename, std::ios::binary);
+        if(!out.is_open()) {
+            LOG(ERROR) << "Could not open binary file: " << filename;
+            continue;
+        }
+
+        // Write the number of edges first (optional, for verification)
+        std::uint64_t edge_count = edges.size();
+        out.write(reinterpret_cast<const char*>(&edge_count), sizeof(edge_count));
+
+        // Write all edges in binary format
+        for (const auto& e: edges) {
+            out.write(reinterpret_cast<const char*>(&e.first), sizeof(e.first));
+            out.write(reinterpret_cast<const char*>(&e.second), sizeof(e.second));
+        }
+        out.close();
+
+        DLOG(INFO) << "Successfully wrote " << edges.size() << " edges to " << filename;
+
+    }
+
+    DLOG(INFO) << "Finished writing partitioned binary edges.";
+}
+
+void TwoPhasePartitioner::export_dgl_partition_metadata(const std::string& output_path, const std::string& graph_name) {
+    std::string path = output_path + "/" + graph_name + ".json";
+    std::ofstream meta_file(path);
+    meta_file << "{\n";
+    meta_file << "  \"graph_name\": \"" << graph_name << "\",\n";
+    meta_file << "  \"num_nodes\": " << globals.NUM_VERTICES << ",\n";
+    meta_file << "  \"num_edges\": " << globals.NUM_EDGES << ",\n";
+    meta_file << "  \"part_method\": \"TwoPhase\",\n";
+    meta_file << "  \"num_parts\": " << globals.NUM_PARTITIONS << ",\n";
+    meta_file << "  \"halo_hops\": 0,\n";
+
+    // node_map
+    meta_file << "  \"node_map\": [";
+    for (size_t i = 0; i < vertex_partition_matrix.size(); ++i) {
+        for (size_t p = 0; p < globals.NUM_PARTITIONS; ++p) {
+            if (vertex_partition_matrix[i][p]) {
+                meta_file << p;
+                break;
+            }
+        }
+        if (i + 1 < vertex_partition_matrix.size()) meta_file << ", ";
+    }
+
+    meta_file << "], \n";
+
+    meta_file << "  \"edge_map\": 0";
+
+    // parts
+    for (size_t p = 0; p < globals.NUM_PARTITIONS; ++p) {
+        meta_file << ",\n  \"part-" << p << "\": {\n";
+        meta_file << "    \"node_feats\": \"part" << p << "/node_feat.dgl\",\n";
+        meta_file << "    \"edge_feats\": \"part" << p << "/edge_feat.dgl\",\n";
+        meta_file << "    \"part_graph\": \"part" << p << "/graph.dgl\"\n";
+        meta_file << "  }";
+    }
+
+    meta_file << "\n}\n";
+    meta_file.close();
+}
+
+void TwoPhasePartitioner::export_node_lists(const std::string& output_path) {
+    LOG(INFO) << "export node lists";
+    for (size_t p = 0; p < globals.NUM_PARTITIONS; ++p) {
+        const std::string path = output_path + "/part" + std::to_string(p);
+        std::filesystem::create_directories(path);
+        std::ofstream ofs(path + "/nodes.txt");
+        for(size_t v = 0; v < vertex_partition_matrix.size(); ++v) {
+            if(vertex_partition_matrix[v][p]) {
+                ofs << v << "\n";
+            }
+        }
+        ofs.close();
+    }
 }
 
 void TwoPhasePartitioner::perform_prepartition_and_partition(std::vector<uint32_t> coms, std::vector<uint64_t> vols, std::vector<double> qscores)
@@ -348,6 +461,10 @@ int TwoPhasePartitioner::find_max_score_partition(edge_t& e)
 
 void TwoPhasePartitioner::update_vertex_partition_matrix(edge_t& e, int max_p)
 {
+    if (max_p >= MAX_NUM_PARTITION) {
+        LOG(FATAL) << "max_p (" << max_p << ") exceeds MAX_NUM_PARTITION (" << MAX_NUM_PARTITION << ")";
+        exit(1);
+    }
     vertex_partition_matrix[e.first][max_p] = true;
     vertex_partition_matrix[e.second][max_p] = true;
 }
@@ -394,6 +511,12 @@ std::vector<std::bitset<MAX_NUM_PARTITION>> TwoPhasePartitioner::get_vertex_part
 {
     return vertex_partition_matrix;
 }
+
+const std::unordered_map<int, std::vector<edge_t>>& TwoPhasePartitioner::get_partitioned_edges() const {
+    DLOG(INFO) << "Partitioned edge counts: " << partitioned_edges.size();
+    return partitioned_edges;
+}
+
 
 void sorted_com_prepartition_forwarder(void* object, std::vector<edge_t> edges)
 {
