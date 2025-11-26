@@ -5,15 +5,6 @@ import torch as th
 import dgl
 import glob
 from dgl.data.utils import load_graphs, save_graphs, save_tensors
-import time
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
-GLOBAL_GRAPH = None
-
-def init_worker(graph):
-    global GLOBAL_GRAPH
-    GLOBAL_GRAPH = graph
 
 def load_partition_node_sets(partition_dir):
     node_files = sorted(glob.glob(os.path.join(partition_dir, "part*/nodes.txt")))
@@ -34,12 +25,7 @@ def compute_node_ownership(partitions):
                 owner[nid] = part_id
     return owner
 
-def build_partition(part_id, part_nodes, partitions, output_dir, abs_out_dir, owner):
-    global GLOBAL_GRAPH
-    g_orig = GLOBAL_GRAPH
-
-    print(f"[{part_id}]:Start Partition.", flush=True)
-
+def build_partition(part_id, part_nodes, partitions, g_orig, output_dir, part_metadata, abs_out_dir, owner):
     graph_node_feats = ['val_mask', 'test_mask', 'train_mask', 'label', 'feat', 'inner_node', 'lf', 'adj']
     tensor_node_feats = ['adj', 'lf', 'inner_node', 'feat', 'label', 'train_mask', 'test_mask', 'val_mask']
 
@@ -59,41 +45,12 @@ def build_partition(part_id, part_nodes, partitions, output_dir, abs_out_dir, ow
     lf = th.ones(num_nodes, dtype=th.int32)
     inner_node = th.tensor([1 if owner[nid] == part_id else 0 for nid in part_nodes], dtype=th.int32)
 
-    start_opt = time.time()
-    # Pre-convert partitions to sets once
-    partition_sets = [set(nodes) for nodes in partitions]
-
-    # Create a mapping from global node ID to local index for O(1) lookup
-    node_to_idx = {part_nodes[i]: i for i, _ in enumerate(part_nodes)}
-
-    # Get all edges involving our partition nodes
-    src_edges, dst_edges = g_orig.out_edges(node_ids)
-    in_src, in_dst = g_orig.in_edges(node_ids)
-
-    # Build neighbor sets efficiently using vectorized operations
-    neighbors_map = [set() for _ in range(num_nodes)]
-
-    src_np = src_edges.numpy()
-    dst_np = dst_edges.numpy()
-    for src_global, dst_global in zip(src_np, dst_np):
-        if src_global in node_to_idx:
-            neighbors_map[node_to_idx[src_global]].add(dst_global)
-
-    in_src_np = in_src.numpy()
-    in_dst_np = in_dst.numpy()
-    for src_global, dst_global in zip(in_src_np, in_dst_np):
-        if dst_global in node_to_idx:
-            neighbors_map[node_to_idx[dst_global]].add(src_global)
-
-    # Build adjacency matrix
     adj = th.zeros((num_nodes, num_parts), dtype=th.int32)
-    for i in range(num_nodes):
-        neighbors = neighbors_map[i]
-        for other_pid in range(num_parts):
-            if neighbors & partition_sets[other_pid]:  # faster set intersection check
+    for i, nid in enumerate(part_nodes):
+        neighbors = set(g_orig.successors(nid).tolist() + g_orig.predecessors(nid).tolist())
+        for other_pid, other_nodes in enumerate(partitions):
+            if neighbors.intersection(other_nodes):
                 adj[i][other_pid] = 1
-    end_opt = time.time()
-    print(f"[{part_id}]:Process Time: {end_opt - start_opt:.4f}s", flush=True)
 
     part_dir = os.path.join(output_dir, f"part{part_id}")
     os.makedirs(part_dir, exist_ok=True)
@@ -117,7 +74,7 @@ def build_partition(part_id, part_nodes, partitions, output_dir, abs_out_dir, ow
     subgraph.ndata['adj']        = adj
 
 
-    print(f"[{part_id}]: expected {len(part_nodes)} nodes, subgraph has {subgraph.number_of_nodes()} nodes", flush=True)
+    print(f"Partition {part_id}: expected {len(part_nodes)} nodes, subgraph has {subgraph.number_of_nodes()} nodes")
     assert len(part_nodes) == subgraph.number_of_nodes()
     save_graphs(os.path.join(part_dir, "graph.dgl"), [subgraph])
 
@@ -126,15 +83,13 @@ def build_partition(part_id, part_nodes, partitions, output_dir, abs_out_dir, ow
     save_tensors(os.path.join(part_dir, "node_feat.dgl"), ndata)
     save_tensors(os.path.join(part_dir, "edge_feat.dgl"), {})  # leer
 
-    print(f"[{part_id}]: Partition finish.", flush=True)
-    return {
-        f"part-{part_id}": {
-            "node_feats": os.path.join(abs_out_dir, f"part{part_id}/node_feat.dgl"),
-            "edge_feats": os.path.join(abs_out_dir, f"part{part_id}/edge_feat.dgl"),
-            "part_graph": os.path.join(abs_out_dir, f"part{part_id}/graph.dgl")
-        }
+    part_metadata[f"part-{part_id}"] = {
+        "node_feats": os.path.join(abs_out_dir, f"part{part_id}/node_feat.dgl"),
+        "edge_feats": os.path.join(abs_out_dir, f"part{part_id}/edge_feat.dgl"),
+        "part_graph": os.path.join(abs_out_dir, f"part{part_id}/graph.dgl")
     }
 
+    print(f"[✓] part{part_id} erfolgreich erzeugt.")
 
 def write_metadata(graph_name, g_orig, node_counts, output_dir, part_metadata, json_name):
     metadata = {
@@ -165,26 +120,10 @@ def main(args):
     part_metadata = {}
     abs_out_dir = os.path.abspath(args.output_dir)
 
-    print("Start ProcessPool for build Partitions.", flush=True)
-    with ProcessPoolExecutor(initializer=init_worker, initargs=(g_orig,)) as executor:
-        futures = []
-
-        for pid, part_nodes in enumerate(partitions):
-            futures.append(
-                executor.submit(
-                    build_partition,
-                    pid,
-                    part_nodes,
-                    partitions,
-                    args.output_dir,
-                    abs_out_dir,
-                    owner
-                )
-            )
-
-        for future in as_completed(futures):
-            result = future.result()
-            part_metadata.update(result)
+    print("Build Partitions.", flush=True)
+    for pid, part_nodes in enumerate(partitions):
+        print(f"Build Partition PID: {pid}", flush=True)
+        build_partition(pid, part_nodes, partitions, g_orig, args.output_dir, part_metadata, abs_out_dir, owner)
 
     print("Write Metadata.", flush=True)
     write_metadata(args.graph_name, g_orig, node_counts, args.output_dir, part_metadata, args.json_name)
