@@ -123,14 +123,14 @@ def build_partition(part_id, part_nodes, partitions, output_dir, abs_out_dir, ow
 
     # node_feat.dgl mit separater Reihenfolge
     ndata = {key: subgraph.ndata[key] for key in tensor_node_feats}
-    save_tensors(os.path.join(part_dir, "node_feat.dgl"), ndata)
-    save_tensors(os.path.join(part_dir, "edge_feat.dgl"), {})  # leer
+    save_tensors(os.path.join(part_dir, "node_feats.dgl"), ndata)
+    save_tensors(os.path.join(part_dir, "edge_feats.dgl"), {})  # leer
 
     print(f"[{part_id}]: Partition finish.", flush=True)
     return {
         f"part-{part_id}": {
-            "node_feats": os.path.join(abs_out_dir, f"part{part_id}/node_feat.dgl"),
-            "edge_feats": os.path.join(abs_out_dir, f"part{part_id}/edge_feat.dgl"),
+            "node_feats": os.path.join(abs_out_dir, f"part{part_id}/node_feats.dgl"),
+            "edge_feats": os.path.join(abs_out_dir, f"part{part_id}/edge_feats.dgl"),
             "part_graph": os.path.join(abs_out_dir, f"part{part_id}/graph.dgl")
         }
     }
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     parser.add_argument("--partition_dir", type=str, required=True,
                         help="Pfad zu den nodes.txt-Dateien (eine pro Partition)")
     parser.add_argument("--output_dir", type=str, required=True,
-                        help="Ausgabeverzeichnis für part*/graph.dgl & node_feat.dgl")
+                        help="Ausgabeverzeichnis für part*/graph.dgl & (node|edge)_feats.dgl")
     parser.add_argument("--json_name", type=str, default="cora.json",
                         help="Name der JSON-Ausgabedatei")
     parser.add_argument("--graph_name", type=str, default="cora",
