@@ -149,13 +149,6 @@ def build_partition(part_id, part_nodes, output_dir, abs_out_dir, owner):
 
 def write_metadata(graph_name, g_orig, num_parts, node_map, edge_map,
                    all_halo_nodes, output_dir, part_metadata, json_name):
-    def format_list(lst, per_line):
-            """Return a string representing the list with per_line values per line."""
-            lines = []
-            for i in range(0, len(lst), per_line):
-                chunk = lst[i:i+per_line]
-                lines.append(json.dumps(chunk)[1:-1])  # remove [ ] added by dumps
-            return "[\n    " + ",\n    ".join(lines) + "\n]"
 
     metadata = {
         "graph_name":  graph_name,
@@ -165,8 +158,8 @@ def write_metadata(graph_name, g_orig, num_parts, node_map, edge_map,
         "partitioner": "Twophase_v2",
         "num_parts":   num_parts,
         "halo_nodes":  all_halo_nodes,   # dict: part_id (str) → [halo node ids]
-        "node_map":    format_list(node_map, 20),
-        "edge_map":    format_list(edge_map, 20),
+        "node_map":    node_map,
+        "edge_map":    edge_map,
     }
     metadata.update(part_metadata)
     out_path = os.path.join(output_dir, json_name)
