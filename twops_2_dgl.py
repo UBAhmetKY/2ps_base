@@ -18,6 +18,23 @@ def init_worker(graph, partitions):
     GLOBAL_GRAPH = graph
     GLOBAL_PARTITIONS = partitions
 
+def make_split_masks(num_nodes, train_ratio=0.6, val_ratio=0.2, seed=42):
+    """Creates random train/val/test masks when not provided by the graph."""
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(num_nodes)
+
+    train_end = int(num_nodes * train_ratio)
+    val_end   = int(num_nodes * (train_ratio + val_ratio))
+
+    train_mask = th.zeros(num_nodes, dtype=th.bool)
+    val_mask   = th.zeros(num_nodes, dtype=th.bool)
+    test_mask  = th.zeros(num_nodes, dtype=th.bool)
+
+    train_mask[perm[:train_end]]       = True
+    val_mask[perm[train_end:val_end]]  = True
+    test_mask[perm[val_end:]]          = True
+
+    return train_mask, val_mask, test_mask
 
 
 def load_partition_node_sets(partition_dir):
@@ -58,11 +75,18 @@ def build_partition(part_id, part_nodes, output_dir, abs_out_dir, owner):
     num_nodes = len(part_nodes)
 
     # Load node features
+    if all(k in g_orig.ndata for k in ('train_mask', 'val_mask', 'test_mask')):
+        train_mask = g_orig.ndata['train_mask'][node_ids]
+        val_mask   = g_orig.ndata['val_mask'][node_ids]
+        test_mask  = g_orig.ndata['test_mask'][node_ids]
+    else:
+        # Generate masks over the full graph once, then slice per partition
+        full_train, full_val, full_test = make_split_masks(g_orig.number_of_nodes())
+        train_mask = full_train[node_ids]
+        val_mask   = full_val[node_ids]
+        test_mask  = full_test[node_ids]
     feat       = g_orig.ndata['feat'][node_ids]
     label      = g_orig.ndata['label'][node_ids]
-    train_mask = g_orig.ndata['train_mask'][node_ids]
-    val_mask   = g_orig.ndata['val_mask'][node_ids]
-    test_mask  = g_orig.ndata['test_mask'][node_ids]
 
     start_opt = time.time()
 
