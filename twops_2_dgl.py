@@ -179,7 +179,7 @@ def write_metadata(graph_name, g_orig, num_parts, node_map, edge_map,
         "num_nodes":   g_orig.number_of_nodes(),
         "num_edges":   g_orig.number_of_edges(),
         "part_method": "vertex_cut",
-        "partitioner": "Twophase_v2",
+        "partitioner": "twophase_base",
         "num_parts":   num_parts,
         "halo_nodes":  all_halo_nodes,   # dict: part_id (str) → [halo node ids]
         "node_map":    node_map,
