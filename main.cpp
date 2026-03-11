@@ -2,6 +2,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <filesystem>
 
 #include "globals.hpp"
 #include "stats.hpp"
@@ -33,6 +34,9 @@ void start_partitioning(Globals &globals, TwoPhasePartitioner &partitioner, std:
 
 int main(int argc, char *argv[])
 {
+    Timer e2e_timer;
+    e2e_timer.start();
+
     // set up glogs and gflags
     google::ParseCommandLineNonHelpFlags(&argc, &argv, true);
     google::InitGoogleLogging(argv[0]);
@@ -78,6 +82,26 @@ int main(int argc, char *argv[])
     // stats
     Stats stats(hdrf, globals);
     stats.compute_and_print_stats();
+    e2e_timer.stop();
+
+    if (!FLAGS_output_path.empty())
+    {
+        std::filesystem::create_directories(FLAGS_output_path);
+        std::ofstream metrics_file(FLAGS_output_path + "/metrics.json");
+        metrics_file << "{\n";
+        metrics_file << "  \"algorithm\": \"2ps_base\",\n";
+        metrics_file << "  \"dataset\": \"" << FLAGS_filename << "\",\n";
+        metrics_file << "  \"k\": " << globals.NUM_PARTITIONS << ",\n";
+        metrics_file << "  \"partitioning_type\": \"edge\",\n";
+        metrics_file << "  \"num_parts\": " << globals.NUM_PARTITIONS << ",\n";
+        metrics_file << "  \"num_nodes\": " << globals.NUM_VERTICES << ",\n";
+        metrics_file << "  \"num_edges\": " << globals.NUM_EDGES << ",\n";
+        metrics_file << "  \"edge_balance\": " << stats.get_edge_balance() << ",\n";
+        metrics_file << "  \"replication_factor\": " << stats.get_replication_factor() << ",\n";
+        metrics_file << "  \"core_time\": " << hdrf.get_partitioning_time() << ",\n";
+        metrics_file << "  \"e2e_time\": " << e2e_timer.get_time() << "\n";
+        metrics_file << "}\n";
+    }
 
   return 0;
 }
@@ -131,5 +155,6 @@ void start_partitioning(Globals &globals, TwoPhasePartitioner &partitioner, std:
         partitioner.perform_partitioning();
     }
     partitioner_timer.stop();
+    partitioner.set_partitioning_time(partitioner_timer.get_time());
     LOG(INFO) << "partitioning time: " << partitioner_timer.get_time();
 }

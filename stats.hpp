@@ -21,6 +21,8 @@ private:
 public:
     explicit Stats(TwoPhasePartitioner& partitiner, Globals& globals);
     void compute_and_print_stats();
+    double get_replication_factor() const;
+    double get_edge_balance() const;
 };
 
 #endif
