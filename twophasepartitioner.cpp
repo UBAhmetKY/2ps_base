@@ -31,6 +31,16 @@ TwoPhasePartitioner::TwoPhasePartitioner(Globals& GLOBALS) : globals(GLOBALS)
 
 }
 
+void TwoPhasePartitioner::set_partitioning_time(double time)
+{
+    partitioning_time = time;
+}
+
+double TwoPhasePartitioner::get_partitioning_time() const
+{
+    return partitioning_time;
+}
+
 void TwoPhasePartitioner::do_sorted_com_prepartitioning(std::vector<edge_t> edges)
 {
     DLOG(INFO) << "Processing " << edges.size() << " edges";

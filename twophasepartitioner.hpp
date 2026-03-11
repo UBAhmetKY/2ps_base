@@ -28,6 +28,7 @@ private:
     std::vector<double> quality_scores;
 
     std::unordered_map<int, std::vector<edge_t>> partitioned_edges;
+    double partitioning_time = 0.0;
 
     int find_min_vol_partition();
     int find_max_score_partition(edge_t& e);
@@ -52,6 +53,8 @@ public:
     std::vector<std::bitset<MAX_NUM_PARTITION>> get_vertex_partition_matrix();
 
     const std::unordered_map<int, std::vector<edge_t>>& get_partitioned_edges() const;
+    void set_partitioning_time(double time);
+    double get_partitioning_time() const;
 
 };
 
