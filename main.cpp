@@ -96,6 +96,7 @@ int main(int argc, char *argv[])
         metrics_file << "  \"num_parts\": " << globals.NUM_PARTITIONS << ",\n";
         metrics_file << "  \"num_nodes\": " << globals.NUM_VERTICES << ",\n";
         metrics_file << "  \"num_edges\": " << globals.NUM_EDGES << ",\n";
+        metrics_file << "  \"node_balance\": " << stats.get_node_balance() << ",\n";
         metrics_file << "  \"edge_balance\": " << stats.get_edge_balance() << ",\n";
         metrics_file << "  \"replication_factor\": " << stats.get_replication_factor() << ",\n";
         metrics_file << "  \"core_time\": " << hdrf.get_partitioning_time() << ",\n";
