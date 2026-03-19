@@ -14,10 +14,8 @@ DBH::DBH(Globals &GLOBALS) : globals(GLOBALS)
     if (FLAGS_write_parts) {
         part_file.open(FLAGS_parts_filename + ".txt");
     }
-#ifdef STATS
     vertex_partition_matrix.resize(globals.NUM_VERTICES);
     edge_load.resize(globals.NUM_PARTITIONS, 0);
-#endif
 }
 
 void DBH::perform_partitioning()
@@ -74,14 +72,12 @@ void DBH::do_dbh(const std::vector<edge_t>& edges)
             write_edge(e, p_id);
         }
 
-#ifdef STATS
         vertex_partition_matrix[e.first][p_id] = true;
         vertex_partition_matrix[e.second][p_id] = true;
 
         auto& load = ++edge_load[p_id];
         if (load < min_load) min_load = load;
         if (load > max_load) max_load = load;
-#endif
     }
 }
 
@@ -90,7 +86,6 @@ int DBH::hash_vertex(uint32_t v)
    return abs(static_cast<int>(static_cast<uint32_t>(v * seed * shrink) % globals.NUM_PARTITIONS)); 
 }
 
-#ifdef STATS
 std::vector<uint64_t>& DBH::get_edge_load()
 {
     return edge_load;
@@ -100,7 +95,6 @@ std::vector<std::bitset<MAX_NUM_PARTITION>> DBH::get_vertex_partition_matrix()
 {
     return vertex_partition_matrix;
 }
-#endif
 
 void dbh_forwarder(void* object, std::vector<edge_t> edges)
 {

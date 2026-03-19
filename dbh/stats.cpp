@@ -3,7 +3,6 @@
 
 #include "stats.hpp"
 
-#ifdef STATS
 Stats::Stats(DBH& partitioner, Globals& globals)
 : partitioner(partitioner), globals(globals)
 {}
@@ -73,4 +72,49 @@ void Stats::compute_and_print_stats()
     LOG(INFO) << "load balance (standard deviation): " << round(std_dev_load * 10000.0) / 10000.0;
     LOG(INFO) << "load balance (max_edge_load / average_edge_load): " <<  max_edge_load / ((double)total_load/globals.NUM_PARTITIONS);
 }
-#endif // STATS
+
+double Stats::get_replication_factor() const
+{
+    return replication_factor;
+}
+
+double Stats::get_edge_balance() const
+{
+    auto machine_edge_loads = partitioner.get_edge_load();
+    double max_edge_load = 0;
+    uint64_t total_load = 0;
+    for (auto load : machine_edge_loads)
+    {
+        total_load += load;
+        if (max_edge_load < load)
+        {
+            max_edge_load = load;
+        }
+    }
+    if (globals.NUM_PARTITIONS == 0 || total_load == 0)
+    {
+        return 0.0;
+    }
+    return max_edge_load / ((double)total_load / globals.NUM_PARTITIONS);
+}
+
+double Stats::get_node_balance() const
+{
+    const auto& vertex_partition_matrix = partitioner.get_vertex_partition_matrix();
+    uint64_t total_vertices_in_parts = 0;
+    uint64_t max_vertices_in_part = 0;
+    for (const auto& bitset : vertex_partition_matrix)
+    {
+        const auto count = static_cast<uint64_t>(bitset.count());
+        total_vertices_in_parts += count;
+        if (count > max_vertices_in_part)
+        {
+            max_vertices_in_part = count;
+        }
+    }
+    if (globals.NUM_PARTITIONS == 0 || total_vertices_in_parts == 0)
+    {
+        return 0.0;
+    }
+    return max_vertices_in_part / ((double)total_vertices_in_parts / globals.NUM_PARTITIONS);
+}

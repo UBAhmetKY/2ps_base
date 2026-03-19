@@ -4,7 +4,6 @@
 #include "globals.hpp"
 #include "dbh.hpp"
 
-#ifdef STATS
 class Stats
 {
 private:
@@ -22,7 +21,9 @@ private:
 public:
     explicit Stats(DBH& partitiner, Globals& globals);
     void compute_and_print_stats();
+    double get_replication_factor() const;
+    double get_edge_balance() const;
+    double get_node_balance() const;
 };
-#endif
 
 #endif
