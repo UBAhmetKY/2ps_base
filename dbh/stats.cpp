@@ -101,20 +101,24 @@ double Stats::get_edge_balance() const
 double Stats::get_node_balance() const
 {
     const auto& vertex_partition_matrix = partitioner.get_vertex_partition_matrix();
+    std::vector<uint64_t> vertices_per_partition(globals.NUM_PARTITIONS, 0);
     uint64_t total_vertices_in_parts = 0;
-    uint64_t max_vertices_in_part = 0;
     for (const auto& bitset : vertex_partition_matrix)
     {
-        const auto count = static_cast<uint64_t>(bitset.count());
-        total_vertices_in_parts += count;
-        if (count > max_vertices_in_part)
+        for (size_t p = 0; p < globals.NUM_PARTITIONS; ++p)
         {
-            max_vertices_in_part = count;
+            if (bitset[p])
+            {
+                ++vertices_per_partition[p];
+                ++total_vertices_in_parts;
+            }
         }
     }
     if (globals.NUM_PARTITIONS == 0 || total_vertices_in_parts == 0)
     {
         return 0.0;
     }
+    const auto max_vertices_in_part =
+        *std::max_element(vertices_per_partition.begin(), vertices_per_partition.end());
     return max_vertices_in_part / ((double)total_vertices_in_parts / globals.NUM_PARTITIONS);
 }
