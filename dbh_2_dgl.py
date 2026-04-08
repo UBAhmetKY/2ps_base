@@ -6,19 +6,22 @@ import dgl
 from dgl.data.utils import load_graphs, save_graphs, save_tensors
 import time
 import numpy as np
+from collections import deque
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ── Globals shared across workers (set once per process via initializer) ──────
 GLOBAL_GRAPH      = None
 GLOBAL_PARTITIONS = None
 GLOBAL_OWNER      = None          # ← added so it isn't pickled per-task
+GLOBAL_EDGE_PARTITIONS = None
 
 
-def init_worker(graph, partitions, owner):
-    global GLOBAL_GRAPH, GLOBAL_PARTITIONS, GLOBAL_OWNER
+def init_worker(graph, partitions, owner, edge_partitions):
+    global GLOBAL_GRAPH, GLOBAL_PARTITIONS, GLOBAL_OWNER, GLOBAL_EDGE_PARTITIONS
     GLOBAL_GRAPH      = graph
     GLOBAL_PARTITIONS = partitions
     GLOBAL_OWNER      = owner     # shared reference, not re-pickled per submit()
+    GLOBAL_EDGE_PARTITIONS = edge_partitions
 
 def make_split_masks(num_nodes, train_ratio=0.6, val_ratio=0.2, seed=42):
     """Creates random train/val/test masks when not provided by the graph."""
@@ -66,6 +69,34 @@ def load_partition_edge_assignment(assignment_file):
     return partitions, partition_edges
 
 
+def map_partition_edges_to_eids(g_orig, partition_edges):
+    src, dst = g_orig.edges()
+    edge_lookup: dict[tuple[int, int], deque[int]] = {}
+    for eid, (u, v) in enumerate(zip(src.numpy(), dst.numpy())):
+        edge_lookup.setdefault((int(u), int(v)), deque()).append(eid)
+
+    num_parts = max(partition_edges.keys()) + 1
+    edge_partitions = []
+    missing = 0
+    for pid in range(num_parts):
+        seen = set()
+        eids = []
+        for edge in partition_edges.get(pid, []):
+            matches = edge_lookup.get(edge)
+            if not matches:
+                missing += 1
+                continue
+            eid = matches.popleft()
+            if eid in seen:
+                raise ValueError(f"Edge id {eid} assigned more than once to partition {pid}")
+            seen.add(eid)
+            eids.append(eid)
+        edge_partitions.append(eids)
+    if missing:
+        raise ValueError(f"{missing} assigned edges were not found in the DGL graph")
+    return edge_partitions
+
+
 # ─────────────────────────────────────────────
 #  Ownership
 # ─────────────────────────────────────────────
@@ -90,16 +121,30 @@ def build_partition(part_id, part_nodes, output_dir, abs_out_dir):
     GLOBAL_* (set once per worker process by the initializer) so they
     are never re-serialised per task.
     """
-    global GLOBAL_GRAPH, GLOBAL_PARTITIONS, GLOBAL_OWNER
+    global GLOBAL_GRAPH, GLOBAL_PARTITIONS, GLOBAL_OWNER, GLOBAL_EDGE_PARTITIONS
     g_orig     = GLOBAL_GRAPH
     partitions = GLOBAL_PARTITIONS
     owner      = GLOBAL_OWNER
+    edge_partitions = GLOBAL_EDGE_PARTITIONS
 
     print(f"[{part_id}] Start", flush=True)
     t0 = time.time()
 
     num_parts  = len(partitions)
-    node_ids   = th.tensor(part_nodes, dtype=th.int64)
+    if edge_partitions is None:
+        node_ids = th.tensor(part_nodes, dtype=th.int64)
+        subgraph = dgl.node_subgraph(g_orig, node_ids)
+    else:
+        edge_ids = th.tensor(edge_partitions[part_id], dtype=th.int64)
+        subgraph = dgl.edge_subgraph(g_orig, edge_ids, relabel_nodes=True)
+        node_ids = subgraph.ndata[dgl.NID].to(th.int64)
+        part_nodes = node_ids.tolist()
+    graph_node_ids = subgraph.ndata[dgl.NID].to(th.int64)
+    graph_edge_ids = (
+        subgraph.edata[dgl.EID].to(th.int64)
+        if dgl.EID in subgraph.edata
+        else th.arange(subgraph.number_of_edges(), dtype=th.int64)
+    )
     num_nodes  = len(part_nodes)
 
     # ── Node features (single batched index) ─────────────────────────────
@@ -153,9 +198,10 @@ def build_partition(part_id, part_nodes, output_dir, abs_out_dir):
     print(f"[{part_id}] Edge processing: {time.time() - t0:.3f}s", flush=True)
 
     # ── Subgraph ──────────────────────────────────────────────────────────
-    subgraph = dgl.node_subgraph(g_orig, node_ids)
     subgraph.edata.clear()
     subgraph.ndata.clear()
+    subgraph.ndata[dgl.NID] = graph_node_ids
+    subgraph.edata[dgl.EID] = graph_edge_ids
     subgraph.ndata['feat']       = feat
     subgraph.ndata['label']      = label
     subgraph.ndata['train_mask'] = train_mask
@@ -233,16 +279,25 @@ def build_edge_map(g_orig, owner: dict[int, int]) -> list[int]:
     return edge_map.tolist()
 
 
+def build_edge_map_from_edge_partitions(num_edges, edge_partitions) -> list[int]:
+    edge_map = np.full(num_edges, -1, dtype=np.int32)
+    for pid, eids in enumerate(edge_partitions):
+        for eid in eids:
+            edge_map[int(eid)] = pid
+    return edge_map.tolist()
+
+
 # ─────────────────────────────────────────────
 #  Main
 # ─────────────────────────────────────────────
 
 def main(args):
     print("Load Partition.", flush=True)
-    partitions, _ = load_partition_edge_assignment(args.partition_file)
+    partitions, partition_edges = load_partition_edge_assignment(args.partition_file)
 
     print("Load Graph.", flush=True)
     g_orig = load_graphs(args.graph_path)[0][0]
+    edge_partitions = map_partition_edges_to_eids(g_orig, partition_edges)
 
     print("Compute Node Ownership.", flush=True)
     owner = compute_node_ownership(partitions)
@@ -258,7 +313,7 @@ def main(args):
     # not pickled individually for every submitted task.
     with ProcessPoolExecutor(
         initializer=init_worker,
-        initargs=(g_orig, partitions, owner),
+        initargs=(g_orig, partitions, owner, edge_partitions),
     ) as executor:
         futures = {
             executor.submit(
@@ -276,7 +331,7 @@ def main(args):
             all_halo_nodes.update({str(k): v for k, v in result["halo_nodes"].items()})
 
     print("Building edge map.", flush=True)
-    edge_map = build_edge_map(g_orig, owner)
+    edge_map = build_edge_map_from_edge_partitions(g_orig.number_of_edges(), edge_partitions)
 
     node_map = th.full((g_orig.number_of_nodes(),), -1, dtype=th.int32)
     for nid, pid in owner.items():

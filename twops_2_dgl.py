@@ -124,9 +124,17 @@ def build_partition(part_id, part_nodes, output_dir, abs_out_dir, owner):
 
     # Build subgraph (only once)
     subgraph = dgl.node_subgraph(g_orig, node_ids)
+    graph_node_ids = subgraph.ndata[dgl.NID].to(th.int64)
+    graph_edge_ids = (
+        subgraph.edata[dgl.EID].to(th.int64)
+        if dgl.EID in subgraph.edata
+        else th.arange(subgraph.number_of_edges(), dtype=th.int64)
+    )
     #subgraph.ndata.pop(dgl.NID, None)
     subgraph.edata.clear()
     subgraph.ndata.clear()
+    subgraph.ndata[dgl.NID] = graph_node_ids
+    subgraph.edata[dgl.EID] = graph_edge_ids
 
     subgraph.ndata['val_mask']   = val_mask
     subgraph.ndata['test_mask']  = test_mask
