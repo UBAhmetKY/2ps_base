@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -28,9 +28,27 @@ RUN apt-get update && \
     python3 -m pip install --upgrade pip && \
     rm -rf /var/lib/apt/lists/*
 
-RUN pip install "numpy<2.0" && \
-    pip install torch==2.0.1 torchdata==0.6.1 dgl ogb PyYAML pydantic && \
-    rm -rf /var/lib/apt/lists/* /root/.cache/pip
+#RUN pip install "numpy<2.0" && \
+#    pip install torch==2.0.1 torchdata==0.6.1 dgl ogb PyYAML pydantic && \
+#    rm -rf /var/lib/apt/lists/* /root/.cache/pip
+
+# Python dependencies including torchdata
+RUN pip install --no-cache-dir \
+    pandas \
+    numpy \
+    scipy \
+    networkx \
+    ogb \
+    PyYAML \
+    pydantic
+
+RUN pip install --no-cache-dir \
+        torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 \
+        --index-url https://download.pytorch.org/whl/cu121
+
+RUN pip install --no-cache-dir \
+        dgl==2.5.0+cu121 \
+        -f https://data.dgl.ai/wheels/torch-2.3/cu121/repo.html
 
 # CMake 3.26.4 installieren
 RUN wget https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-x86_64.sh && \
