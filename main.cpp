@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <filesystem>
+#include <chrono>
 
 #include "globals.hpp"
 #include "stats.hpp"
@@ -34,8 +35,7 @@ void start_partitioning(Globals &globals, TwoPhasePartitioner &partitioner, std:
 
 int main(int argc, char *argv[])
 {
-    Timer e2e_timer;
-    e2e_timer.start();
+    const auto main_start = std::chrono::steady_clock::now();
 
     // set up glogs and gflags
     google::ParseCommandLineNonHelpFlags(&argc, &argv, true);
@@ -82,10 +82,10 @@ int main(int argc, char *argv[])
     // stats
     Stats stats(hdrf, globals);
     stats.compute_and_print_stats();
-    e2e_timer.stop();
-
     if (!FLAGS_output_path.empty())
     {
+        const double core_time =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - main_start).count();
         std::filesystem::create_directories(FLAGS_output_path);
         std::ofstream metrics_file(FLAGS_output_path + "/metrics.json");
         metrics_file << "{\n";
@@ -99,8 +99,7 @@ int main(int argc, char *argv[])
         metrics_file << "  \"node_balance\": " << stats.get_node_balance() << ",\n";
         metrics_file << "  \"edge_balance\": " << stats.get_edge_balance() << ",\n";
         metrics_file << "  \"replication_factor\": " << stats.get_replication_factor() << ",\n";
-        metrics_file << "  \"core_time\": " << hdrf.get_partitioning_time() << ",\n";
-        metrics_file << "  \"e2e_time\": " << e2e_timer.get_time() << "\n";
+        metrics_file << "  \"core_time\": " << core_time << "\n";
         metrics_file << "}\n";
     }
 
