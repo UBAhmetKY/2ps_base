@@ -57,7 +57,7 @@ RUN wget https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4
 
 WORKDIR /app
 
-# Build ausführen
+# Run the build
 RUN --mount=type=bind,source=.,target=/sources,readonly=0 \
     sh -c " cd /sources && \
             mkdir build && \
@@ -69,5 +69,4 @@ RUN --mount=type=bind,source=.,target=/sources,readonly=0 \
 
 
 CMD ["/bin/bash"]
-
 
