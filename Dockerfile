@@ -65,8 +65,7 @@ RUN --mount=type=bind,source=.,target=/sources,readonly=0 \
             cmake .. && \
             make -j\$(nproc) && \
             cp twophasepartitioner /app/ && \
-            cp dbh /app/ && \
-            cp ../*.py /app/"
+            cp dbh /app/"
 
 
 CMD ["/bin/bash"]
